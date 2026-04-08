@@ -11,9 +11,11 @@ export default function Planner({
   setActivityText,
   handleAdd,
   handleDelete,
-  selectedPlace,
-  setSelectedPlace,
   handleReorder,
+
+  // 🔥 NEW (quan trọng)
+  selectedPlaceByDay,
+  setSelectedPlaceByDay,
 }) {
   const days = getDays();
 
@@ -27,14 +29,11 @@ export default function Planner({
         boxShadow: "0 4px 15px rgba(0,0,0,0.08)",
       }}
     >
-      {/* HEADER */}
       <Typography variant="h5" sx={{ fontWeight: 700, mb: 3 }}>
         📅 Lịch trình
       </Typography>
 
-      {/* TIMELINE */}
       <Box sx={{ position: "relative", pl: 3 }}>
-        {/* LINE */}
         <Box
           sx={{
             position: "absolute",
@@ -63,18 +62,23 @@ export default function Planner({
 
             <DayItem
               day={day}
-              index={index}
-              activities={activities}
+              dayIndex={index}
               tripId={tripId}
+              activities={activities}
               selectedDay={selectedDay}
               setSelectedDay={setSelectedDay}
               activityText={activityText}
               setActivityText={setActivityText}
               handleAdd={handleAdd}
               handleDelete={handleDelete}
-              selectedPlace={selectedPlace}
-              setSelectedPlace={setSelectedPlace}
               handleReorder={handleReorder}
+              selectedPlace={selectedPlaceByDay[index]}
+              setSelectedPlace={(place) =>
+                setSelectedPlaceByDay((prev) => ({
+                  ...prev,
+                  [index]: place,
+                }))
+              }
             />
           </Box>
         ))}

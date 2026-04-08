@@ -1,5 +1,12 @@
 import { Box, Typography, Button } from "@mui/material";
 import LocationOnIcon from "@mui/icons-material/LocationOn";
+import { auth, loginWithGoogle } from "../firebase/auth";
+import { logout } from "../firebase/auth";
+import { query, where } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { Avatar, Menu, MenuItem } from "@mui/material";
+import LogoutIcon from "@mui/icons-material/Logout";
+import GoongPlaceSearch from "../components/GoongPlaceSearch";
 import {
   Dialog,
   DialogTitle,
@@ -24,6 +31,8 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import { useNavigate } from "react-router-dom";
 
 export default function Home() {
+  const [tripLocation, setTripLocation] = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -35,9 +44,34 @@ export default function Home() {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [snackbarSeverity, setSnackbarSeverity] = useState("success"); // "success" | "error"
+  const [anchorEl, setAnchorEl] = useState(null);
+  const menuOpen = Boolean(anchorEl);
 
+  const handleClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleClose = () => {
+    setAnchorEl(null);
+  };
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "trips"), (snapshot) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      console.log("USER:", u);
+    });
+    return () => unsub();
+  }, []);
+  useEffect(() => {
+    // ❗ nếu chưa login → clear data
+    if (!user) {
+      setTrips([]);
+      setLoading(false);
+      return;
+    }
+
+    const q = query(collection(db, "trips"), where("userId", "==", user.uid));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const tripsData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -48,7 +82,7 @@ export default function Home() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]); // 👈 QUAN TRỌNG
   return (
     <Box
       sx={{
@@ -65,6 +99,7 @@ export default function Home() {
           background: "#f8f9fb",
           display: "flex",
           alignItems: "center",
+          justifyContent: "space-between", // 👈 thêm
           px: { xs: 3, md: 10, lg: 30 },
           borderBottom: "1px solid #eee",
         }}
@@ -78,6 +113,44 @@ export default function Home() {
         >
           ✈️ TripPlanner
         </Typography>
+
+        {/* 👇 USER + LOGOUT */}
+        {user && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {/* AVATAR */}
+            <Avatar
+              src={user?.photoURL}
+              onClick={handleClick}
+              sx={{
+                width: 36,
+                height: 36,
+                cursor: "pointer",
+                border: "2px solid #eee",
+                "&:hover": {
+                  transform: "scale(1.05)",
+                },
+              }}
+            />
+
+            {/* NAME */}
+            <Typography sx={{ fontSize: 14, fontWeight: 500 }}>
+              {user?.displayName}
+            </Typography>
+
+            {/* MENU */}
+            <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleClose}>
+              <MenuItem
+                onClick={() => {
+                  handleClose();
+                  logout();
+                }}
+              >
+                <LogoutIcon sx={{ mr: 1 }} />
+                Đăng xuất
+              </MenuItem>
+            </Menu>
+          </Box>
+        )}
       </Box>
 
       {/* MAIN */}
@@ -212,23 +285,42 @@ export default function Home() {
             </Typography>
           ) : null}
 
-          <Button
-            variant="contained"
-            onClick={() => setOpen(true)} // 👈 thêm dòng này
-            sx={{
-              mt: 4,
-              borderRadius: "12px",
-              textTransform: "none",
-              px: 4,
-              py: 1.5,
-              fontSize: "16px",
-              fontWeight: 600,
-              background: "linear-gradient(135deg, #7b3fe4, #a66cff)",
-              boxShadow: "0 6px 20px rgba(0,0,0,0.2)",
-            }}
-          >
-            + Tạo chuyến đi
-          </Button>
+          {!user ? (
+            <Button
+              variant="contained"
+              onClick={loginWithGoogle}
+              sx={{
+                mt: 4,
+                borderRadius: "12px",
+                textTransform: "none",
+                px: 4,
+                py: 1.5,
+                fontSize: "16px",
+                fontWeight: 600,
+                background: "#fff",
+                color: "#6a4cff",
+              }}
+            >
+              🔐 Đăng nhập Google
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              onClick={() => setOpen(true)}
+              sx={{
+                mt: 4,
+                borderRadius: "12px",
+                textTransform: "none",
+                px: 4,
+                py: 1.5,
+                fontSize: "16px",
+                fontWeight: 600,
+                background: "linear-gradient(135deg, #7b3fe4, #a66cff)",
+              }}
+            >
+              + Tạo chuyến đi
+            </Button>
+          )}
         </Box>
       </Box>
       <Dialog
@@ -281,12 +373,16 @@ export default function Home() {
 
           {/* Điểm đến FULL */}
           <Typography sx={{ mb: 1, fontWeight: 600 }}>Điểm đến</Typography>
-          <TextField
-            fullWidth
-            placeholder="VD: Đà Lạt, Việt Nam"
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            sx={{ mb: 3 }}
+          <GoongPlaceSearch
+            onSelect={(place) => {
+              setDestination(place.name);
+
+              // 🔥 LƯU LUÔN LAT LNG
+              setTripLocation({
+                lat: place.lat,
+                lng: place.lng,
+              });
+            }}
           />
 
           {/* Ngày bắt đầu + kết thúc */}
@@ -358,6 +454,8 @@ export default function Home() {
                   startDate: startDate,
                   endDate: endDate,
                   createdAt: new Date(),
+                  userId: user.uid,
+                  location: tripLocation,
                 });
 
                 setSnackbarMessage("Tạo chuyến đi thành công!");

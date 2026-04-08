@@ -2,12 +2,11 @@ import { Box, Typography, Button, IconButton } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import GoongPlaceSearch from "./GoongPlaceSearch";
 import { motion } from "framer-motion";
-
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 
 export default function DayItem({
   day,
-  index,
+  dayIndex,
   activities,
   tripId,
   selectedDay,
@@ -21,7 +20,7 @@ export default function DayItem({
   handleReorder,
 }) {
   const dayActivities = activities
-    .filter((a) => a.tripId === tripId && a.day === index)
+    .filter((a) => a.tripId === tripId && a.day === dayIndex)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
 
   return (
@@ -36,7 +35,7 @@ export default function DayItem({
       }}
     >
       {/* HEADER */}
-      <Typography sx={{ fontWeight: 700 }}>Day {index + 1}</Typography>
+      <Typography sx={{ fontWeight: 700 }}>Day {dayIndex + 1}</Typography>
 
       <Typography sx={{ fontSize: 13, opacity: 0.6 }}>
         {new Date(day).toLocaleDateString("vi-VN")}
@@ -46,17 +45,20 @@ export default function DayItem({
       <Button
         variant="outlined"
         size="small"
-        onClick={() => setSelectedDay(selectedDay === index ? null : index)}
+        onClick={() =>
+          setSelectedDay(selectedDay === dayIndex ? null : dayIndex)
+        }
         sx={{ mt: 1 }}
       >
         + Thêm địa điểm
       </Button>
 
       {/* INPUT */}
-      {selectedDay === index && (
+      {selectedDay === dayIndex && (
         <Box sx={{ mt: 2 }}>
           <GoongPlaceSearch
             onSelect={(place) => {
+              console.log("SELECTED:", place);
               setActivityText(place.name);
               setSelectedPlace(place);
             }}
@@ -64,7 +66,18 @@ export default function DayItem({
 
           <Button
             variant="contained"
-            onClick={() => handleAdd(index)}
+            disabled={!selectedPlace} // 🔥 không cho bấm khi chưa chọn
+            onClick={() => {
+              if (!selectedPlace) {
+                alert("⚠️ Chọn địa điểm từ danh sách!");
+                return;
+              }
+
+              console.log("SAVE:", selectedPlace);
+
+              // 🔥 clone để tránh mất reference
+              handleAdd(dayIndex, { ...selectedPlace });
+            }}
             sx={{ mt: 1 }}
           >
             Lưu
@@ -91,7 +104,7 @@ export default function DayItem({
           handleReorder(items);
         }}
       >
-        <Droppable droppableId={`day-${index}`}>
+        <Droppable droppableId={`day-${dayIndex}`}>
           {(provided) => (
             <div ref={provided.innerRef} {...provided.droppableProps}>
               {dayActivities.map((a, i) => (
@@ -113,14 +126,11 @@ export default function DayItem({
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
-                            transition: "0.2s",
                             "&:hover": {
                               boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                              transform: "translateY(-2px)",
                             },
                           }}
                         >
-                          {/* DRAG HANDLE */}
                           <Box
                             {...provided.dragHandleProps}
                             sx={{
@@ -137,7 +147,6 @@ export default function DayItem({
                             </Typography>
                           </Box>
 
-                          {/* DELETE */}
                           <IconButton onClick={() => handleDelete(a.id)}>
                             <DeleteIcon color="error" />
                           </IconButton>

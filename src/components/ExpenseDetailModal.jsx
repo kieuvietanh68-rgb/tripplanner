@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 import ExpenseChart from "./ExpenseChart";
 import ExpenseChartByDate from "./ExpenseChartByDate";
 
