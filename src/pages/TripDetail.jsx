@@ -5,11 +5,14 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { useNavigate } from "react-router-dom";
 import IconButton from "@mui/material/IconButton";
 import Planner from "../components/Planner";
-import { updateDoc } from "firebase/firestore";
 import Note from "../components/Note";
 import Budget from "../components/Budget";
 import MapView from "../components/MapView";
-import { query, where, orderBy } from "firebase/firestore";
+import useNearbyPlaces from "../hooks/useNearbyPlaces";
+import NearbySuggestions from "../components/NearbySuggestions";
+import BookingTab from "../components/BookingTab";
+import useNearbyHotels from "../hooks/useNearbyHotels";
+
 import {
   collection,
   addDoc,
@@ -17,27 +20,82 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  query,
+  where,
+  orderBy,
+  updateDoc,
 } from "firebase/firestore";
 
 import { Box, Typography } from "@mui/material";
 
 export default function TripDetail() {
-  const [selectedPlace, setSelectedPlace] = useState(null);
-  const [tripLocation, setTripLocation] = useState(null);
-  const [tab, setTab] = useState("planner");
+  const [tab, setTab] = useState(0);
   const navigate = useNavigate();
   const { id } = useParams();
 
   const [trip, setTrip] = useState(null);
+  const [tripLocation, setTripLocation] = useState(null);
+
   const [activities, setActivities] = useState([]);
-  const [expenses, setExpenses] = useState([]);
-
+  const [selectedDay, setSelectedDay] = useState(null);
   const [activityText, setActivityText] = useState("");
-
-  // 🔥 FIX: lưu theo từng day
   const [selectedPlaceByDay, setSelectedPlaceByDay] = useState({});
 
-  const [selectedDay, setSelectedDay] = useState(null);
+  // 👉 map vẫn giữ cho planner (không liên quan booking)
+  const [selectedPlace, setSelectedPlace] = useState(null);
+
+  const nearbyHotels = useNearbyHotels(tripLocation);
+  const nearbyPlaces = useNearbyPlaces(tripLocation, trip?.destination);
+
+  // =============================
+  // 📌 LOAD TRIP
+  // =============================
+  useEffect(() => {
+    const fetchTrip = async () => {
+      const docRef = doc(db, "trips", id);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setTrip(data);
+
+        if (data.location?.lat && data.location?.lng) {
+          setTripLocation({
+            lat: data.location.lat,
+            lng: data.location.lng,
+          });
+        }
+      }
+    };
+
+    fetchTrip();
+  }, [id]);
+
+  // =============================
+  // 📌 ACTIVITIES
+  // =============================
+  useEffect(() => {
+    const q = query(
+      collection(db, "activities"),
+      where("tripId", "==", id),
+      orderBy("order", "asc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      setActivities(data);
+    });
+
+    return () => unsubscribe();
+  }, [id]);
+
+  // =============================
+  // 📌 DAYS
+  // =============================
   const getDays = () => {
     if (!trip) return [];
 
@@ -54,72 +112,14 @@ export default function TripDetail() {
 
     return days;
   };
-  // 🔥 totalDays safe
-  const totalDays = trip
-    ? Math.ceil(
-        (new Date(trip.endDate) - new Date(trip.startDate)) /
-          (1000 * 60 * 60 * 24),
-      ) + 1
-    : 1;
 
-  // 🔥 reorder
-  const handleReorder = async (items) => {
-    try {
-      await Promise.all(
-        items.map((item, index) =>
-          updateDoc(doc(db, "activities", item.id), {
-            order: index,
-          }),
-        ),
-      );
-    } catch (err) {
-      console.error("Lỗi reorder:", err);
-    }
-  };
-
-  // 🔥 lấy activities
-  useEffect(() => {
-    const q = query(
-      collection(db, "activities"),
-      where("tripId", "==", id),
-      orderBy("order", "asc"),
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setActivities(data);
-    });
-
-    return () => unsubscribe();
-  }, [id]);
-
-  // 🔥 lấy trip
-  useEffect(() => {
-    const fetchTrip = async () => {
-      const docRef = doc(db, "trips", id);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setTrip(data);
-        setTripLocation(data.location);
-      }
-    };
-
-    fetchTrip();
-  }, [id]);
-
-  // ✅ ADD PLACE (FIX CHUẨN)
+  // =============================
+  // 📌 ADD
+  // =============================
   const handleAdd = async (dayIndex, place) => {
-    if (!place) {
-      alert("Chọn địa điểm trước!");
-      return;
-    }
+    if (!place) return;
 
-    const newActivity = {
+    await addDoc(collection(db, "activities"), {
       tripId: id,
       day: dayIndex,
       place: place.name,
@@ -128,58 +128,74 @@ export default function TripDetail() {
         lng: place.lng,
       },
       order: Date.now(),
-    };
+    });
 
-    // 🔥 thêm vào Firestore
-    const docRef = await addDoc(collection(db, "activities"), newActivity);
-
-    // 🔥 QUAN TRỌNG: update UI ngay
-    setActivities((prev) => [...prev, { id: docRef.id, ...newActivity }]);
-
-    console.log("ADD SUCCESS");
-
-    setSelectedPlace(null);
     setSelectedDay(null);
   };
 
+  // =============================
+  // 📌 DELETE
+  // =============================
   const handleDelete = async (activityId) => {
-    try {
-      await deleteDoc(doc(db, "activities", activityId));
-
-      // 🔥 update UI ngay
-      setActivities((prev) => prev.filter((a) => a.id !== activityId));
-
-      console.log("DELETE SUCCESS");
-    } catch (err) {
-      console.error("DELETE ERROR:", err);
-    }
+    await deleteDoc(doc(db, "activities", activityId));
   };
+
+  // =============================
+  // 📌 REORDER
+  // =============================
+  const handleReorder = async (items, dayIndex) => {
+    setActivities((prev) => {
+      const other = prev.filter((a) => a.day !== dayIndex);
+
+      const updated = items.map((item, index) => ({
+        ...item,
+        order: index + dayIndex * 1000,
+      }));
+
+      return [...other, ...updated];
+    });
+
+    await Promise.all(
+      items.map((item, index) =>
+        updateDoc(doc(db, "activities", item.id), {
+          order: index + dayIndex * 1000,
+        })
+      )
+    );
+  };
+
+  // =============================
+  // LOADING
+  // =============================
   if (!trip) {
     return <Typography>Đang tải dữ liệu...</Typography>;
   }
+
+  // =============================
+  // UI
+  // =============================
   return (
-    <Box sx={{ minHeight: "100vh", background: "#a4a6afff" }}>
+    <Box sx={{ minHeight: "100vh", background: "#a4a6af" }}>
       {/* HEADER */}
       <Box
         sx={{
-          background: "linear-gradient(135deg, #4F1A8A 0%, #6a4cff 100%)",
+          background: "linear-gradient(135deg, #4F1A8A, #6a4cff)",
           color: "#fff",
           px: 5,
           py: 4,
+          borderRadius: "20px",
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center" }}>
           <IconButton onClick={() => navigate("/")} sx={{ color: "#fff" }}>
-            <ArrowBackIcon fontSize="small" />
+            <ArrowBackIcon />
           </IconButton>
 
-          <Typography variant="h4" sx={{ fontWeight: 600 }}>
-            {trip.name}
-          </Typography>
+          <Typography variant="h4">{trip.name}</Typography>
         </Box>
 
         <Typography sx={{ mt: 1 }}>📍 {trip.destination}</Typography>
-        <Typography sx={{ opacity: 0.8 }}>
+        <Typography>
           📅 {trip.startDate} → {trip.endDate}
         </Typography>
       </Box>
@@ -189,42 +205,93 @@ export default function TripDetail() {
         <Box sx={{ display: "flex", gap: 3 }}>
           {/* LEFT */}
           <Box sx={{ flex: 2 }}>
-            <Planner
-              getDays={getDays}
-              activities={activities}
-              tripId={id}
-              selectedDay={selectedDay}
-              setSelectedDay={setSelectedDay}
-              activityText={activityText}
-              setActivityText={setActivityText}
-              handleAdd={handleAdd}
-              handleDelete={handleDelete}
-              handleReorder={handleReorder}
-              selectedPlaceByDay={selectedPlaceByDay}
-              setSelectedPlaceByDay={setSelectedPlaceByDay}
-            />
+            {/* TAB */}
+            <Box sx={{ display: "flex", gap: 1.5, mb: 3 }}>
+              {["📅 Lịch trình", "🏨 Booking", "💰 Chi phí"].map(
+                (t, i) => (
+                  <Box
+                    key={i}
+                    onClick={() => setTab(i)}
+                    sx={{
+                      px: 3,
+                      py: 1.2,
+                      borderRadius: "10px",
+                      cursor: "pointer",
+                      background: tab === i ? "#6a4cff" : "#eee",
+                      color: tab === i ? "#fff" : "#333",
+                    }}
+                  >
+                    {t}
+                  </Box>
+                )
+              )}
+            </Box>
 
-            <Budget
-              tripId={id}
-              startDate={trip.startDate}
-              endDate={trip.endDate}
-            />
+            {/* TAB CONTENT */}
+            {tab === 0 && (
+              <>
+                <NearbySuggestions
+                  places={nearbyPlaces}
+                  onAdd={async (p) => {
+                    if (selectedDay === null) {
+                      alert("Chọn ngày trước!");
+                      return;
+                    }
 
-            <Note tripId={id} />
+                    const res = await fetch(
+                      `https://rsapi.goong.io/Place/Detail?place_id=${p.place_id}&api_key=${process.env.REACT_APP_GOONG_API_KEY}`
+                    );
+
+                    const data = await res.json();
+                    const loc = data.result.geometry.location;
+
+                    handleAdd(selectedDay, {
+                      name: p.description,
+                      lat: loc.lat,
+                      lng: loc.lng,
+                    });
+                  }}
+                />
+
+                <Planner
+                  getDays={getDays}
+                  activities={activities}
+                  tripId={id}
+                  selectedDay={selectedDay}
+                  setSelectedDay={setSelectedDay}
+                  activityText={activityText}
+                  setActivityText={setActivityText}
+                  handleAdd={handleAdd}
+                  handleDelete={handleDelete}
+                  handleReorder={handleReorder}
+                  selectedPlaceByDay={selectedPlaceByDay}
+                  setSelectedPlaceByDay={setSelectedPlaceByDay}
+                />
+
+                <Note tripId={id} />
+              </>
+            )}
+
+            {tab === 1 && <BookingTab tripId={id} />}
+
+            {tab === 2 && (
+              <Budget
+                tripId={id}
+                startDate={trip.startDate}
+                endDate={trip.endDate}
+              />
+            )}
           </Box>
 
           {/* RIGHT MAP */}
-          <Box
-            sx={{
-              flex: 1.2,
-              position: "sticky",
-              top: 100,
-              height: "80vh",
-              borderRadius: 3,
-              overflow: "hidden",
-            }}
-          >
-            <MapView activities={activities} tripLocation={tripLocation} />
+          <Box sx={{ flex: 1.2, height: "80vh" }}>
+            <MapView
+              activities={activities}
+              tripLocation={tripLocation}
+              hotels={nearbyHotels}
+              selectedPlace={selectedPlace}
+              setSelectedPlace={setSelectedPlace}
+            />
           </Box>
         </Box>
       </Box>

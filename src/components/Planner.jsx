@@ -12,8 +12,6 @@ export default function Planner({
   handleAdd,
   handleDelete,
   handleReorder,
-
-  // 🔥 NEW (quan trọng)
   selectedPlaceByDay,
   setSelectedPlaceByDay,
 }) {

@@ -74,7 +74,7 @@ export default function DayItem({
               }
 
               console.log("SAVE:", selectedPlace);
-
+              console.log("CLICK SAVE DAY:", dayIndex);
               // 🔥 clone để tránh mất reference
               handleAdd(dayIndex, { ...selectedPlace });
             }}
@@ -101,7 +101,8 @@ export default function DayItem({
           const [moved] = items.splice(result.source.index, 1);
           items.splice(result.destination.index, 0, moved);
 
-          handleReorder(items);
+          // 🔥 truyền items mới đã reorder
+          handleReorder(items, dayIndex);
         }}
       >
         <Droppable droppableId={`day-${dayIndex}`}>
